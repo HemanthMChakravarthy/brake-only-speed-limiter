@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Direction-Aware, Slip-Aware Brake-Only Speed Limiting: Simulation Code"
+version: 1.1.0
+date-released: 2026-10-27
+license: MIT
+authors:
+  - family-names: Mudduluru
+    given-names: Hemanth Chakravarthy
+    email: hemanth.chakky@gmail.com
+    affiliation: "ZF Group, Livonia, Michigan, USA"
+repository-code: "https://github.com/HemanthMChakravarthy/brake-only-speed-limiter"
+keywords:
+  - hill descent control
+  - brake-only speed control
+  - road grade estimation
+  - wheel slip
+  - brake force distribution
+  - reverse driving
+  - vehicle dynamics simulation

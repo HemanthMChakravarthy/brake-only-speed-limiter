@@ -3,36 +3,44 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)
 
-Open simulation code for the paper:
+Simulation code and results for the paper:
 
 > H. C. Mudduluru, *Direction-Aware, Slip-Aware Brake-Only Speed Limiting for Low-Speed Descent of Steep Grades with Adaptive Grade and Mass Estimation*. Submitted to the International Journal of Automotive Technology (IJAT).
 
-The code simulates a vehicle that holds a walking-pace set speed (4 km/h) on steep grades using the friction brakes alone. It compares a proposed controller with four baselines in **forward** descent (nose downhill) and **reverse** descent (nose uphill), and reproduces every table and figure in the paper.
+The code simulates a vehicle that holds a walking-pace set speed (4 km/h) on steep grades using the friction brakes alone. It compares a proposed controller with four baselines in **forward** descent (nose downhill) and **reverse** descent (nose uphill).
 
 **Main finding.** In reverse descent, load shifts to the rear axle while a fixed front-biased brake distribution still asks the front axle for most of the braking force. The front wheels lock and the speed runs away, even with an anti-lock-style slip cap. A slip-aware, direction-scheduled front/rear pressure reallocation removes these lock-ups.
 
-![Reverse descent at 30 % grade, mu = 0.42](figures/fig2_reverse_lowmu_timeseries.png)
+![Reverse descent at 30 % grade, mu = 0.42](out_paper/fig3_reverse_lowmu_timeseries.png)
 
-## Repository layout
+## Repository contents
 
-```
-bsl/                    simulation package
-  model.py              vehicle plant, controllers, slip layer, Monte Carlo sampling
-  metrics.py            performance metrics
-scripts/
-  run_montecarlo.py     run one Monte Carlo job -> per-sample CSV
-  reproduce_all.py      run all evaluation and tuning jobs, then build tables and figures
-  run_validation.py     independent validation set (Table 6)
-  make_tables.py        Tables 2-5 + friction-margin checks
-  make_figures.py       Figures 1-4
-results/
-  montecarlo/           evaluation set (parameter seed 42, N = 400)
-  tuning/               tuning set (parameter seed 3, N = 120)
-  validation/           independent validation set (parameter seed 2027, N = 400)
-  tables/               generated tables (CSV) and checks.txt
-figures/                generated figures (PNG, 300 dpi)
-tests/                  smoke tests
-```
+| Path | Contents |
+|---|---|
+| `bsl_sim3.py` | Vehicle plant, all controllers, slip layer, Monte Carlo sampling (NumPy only) |
+| `run_lib.py` | Performance metrics |
+| `run_v4.py` | Reallocation-threshold study on the evaluation set → `out_v4/` |
+| `run_reverse_baselines.py` | Reverse-descent PI, RB and A-FF+PI on the evaluation set → `out_paper/mc_*_rev_*.csv` |
+| `run_extra.py` | Forward baselines, tuning set and independent validation set → `out_extra/` |
+| `make_tables.py` | Builds Tables 2–6 and the friction-margin checks → `tables/` |
+| `figs_paper.py`, `fig4.py`, `fig_fix.py` | Figures 1–4 → `out_paper/` |
+| `out_v4/` | Evaluation-set results: proposed controller at three reallocation thresholds, FF+PI reverse, parameter samples |
+| `out_paper/` | Paper figures and reverse-descent baseline results |
+| `out_extra/` | Forward baselines, tuning set and validation set results |
+| `paper/` | Script used to build the first manuscript draft (docx-js) |
+
+## Controller names in the code
+
+| Name in code | Name in paper | Description |
+|---|---|---|
+| `PI` | PI | Feedback-only PI, nominal mass |
+| `RB` | RB | Generic rule-based pressure ramp with dead band (not a reproduction of any production system) |
+| `FFPI` | FF+PI | PI + grade feedforward (fixed 0.15 s low-pass), nominal mass |
+| `PROP1` | A-FF+PI | FF+PI + RLS effective-mass adaptation + jerk limiter, no reallocation (first design iteration) |
+| `PROP2` | — | Intermediate design iteration; not reported separately |
+| `PROP3` | Proposed | Noise-adaptive Kalman grade estimator, confidence-blended RLS effective mass, feedforward–PI with pressure-command hysteresis, slip-aware front/rear reallocation |
+
+**Paper settings for `PROP3`:** call `simulate(..., Qg=0.15, db=1.0)` and set the reallocation threshold with `bsl_sim3.SLIP['re']` (0.06 forward, 0.04 reverse). The function defaults (`Qg=0.6`, `db=0`) are the earlier design iteration. All controllers share the same PI gains and the same anti-lock-style slip cap.
 
 ## Installation
 
@@ -42,69 +50,55 @@ Python 3.9 or later.
 git clone https://github.com/HemanthMChakravarthy/brake-only-speed-limiter.git
 cd brake-only-speed-limiter
 pip install -r requirements.txt
-pytest -q          # optional smoke tests, about 1 min
 ```
 
 ## Reproducing the paper
 
-All result CSVs are included, so the tables and figures can be rebuilt immediately:
+All result CSVs are included, so the tables can be rebuilt in seconds without rerunning the simulations:
 
 ```bash
-python scripts/make_tables.py
-python scripts/make_figures.py
+python make_tables.py
 ```
 
-To rerun the simulations from scratch, delete `results/montecarlo/`, `results/tuning/` and `results/validation/`, then run:
+To regenerate the results from scratch, delete the result CSVs and run the scripts below. Each skips jobs whose output already exists. Times are for one CPU core.
 
-```bash
-python scripts/reproduce_all.py    # evaluation + tuning sets, about 15-20 min on one CPU core
-python scripts/run_validation.py   # independent validation set, about 10 min
-```
-
-Both scripts skip jobs whose output CSV already exists, so they can be stopped and restarted.
-
-Run a single Monte Carlo job:
-
-```bash
-python scripts/run_montecarlo.py --controller PROPOSED --direction rev --out my_run.csv
-python scripts/run_montecarlo.py --controller PROPOSED --direction rev --kre 0.06 --out my_run_kre006.csv
-```
+| Step | Command | Output | Time |
+|---|---|---|---|
+| 1 | `python run_v4.py` | `out_v4/` | about 6 min |
+| 2 | `python run_reverse_baselines.py` | `out_paper/mc_*_rev_*.csv` | about 5 min |
+| 3 | `python run_extra.py` | `out_extra/` | about 15 min |
+| 4 | `python make_tables.py` | `tables/` | seconds |
+| 5 | `python figs_paper.py`, `python fig4.py`, `python fig_fix.py` | `out_paper/*.png` | about 2 min |
 
 Use the simulator directly:
 
 ```python
 import numpy as np
-from bsl import simulate, sample_params, metrics
+import bsl_sim3 as S
+from run_lib import metrics
 
-prm = sample_params(10, np.random.default_rng(0))   # 10 random vehicles / grades / friction levels
-rec = simulate('PROPOSED', prm, direction=-1)        # reverse descent, 40 s
+prm = S.sample_params(10, np.random.default_rng(0))   # 10 random vehicles / grades / friction levels
+S.SLIP['re'] = 0.04                                    # reverse-descent reallocation threshold
+rec = S.simulate('PROP3', prm, direction=-1, Qg=0.15, db=1.0)
 print(metrics(rec)['max_speed_kph'])
 ```
 
-## Model summary
+## Mapping to the paper
 
-| Part | Description |
-|---|---|
-| Vehicle | Two-axle longitudinal model, quasi-static load transfer, grade profile with optional roughness |
-| Wheels and tires | Per-axle rotational dynamics, Pacejka-type longitudinal tire (B = 10, C = 1.65), brake lock possible |
-| Powertrain | Low-range idle creep / engine-braking force, saturated |
-| Brake actuator | Per axle: dead time + first-order lag + 400 bar/s rate limit; fixed hydraulic front share 0.65 |
-| Sensors | Wheel speeds (σ = 0.02 m/s), accelerometer (σ = 0.05 m/s², bias up to ±0.1 m/s²) |
-| Rates | Plant 1 ms, controllers 10 ms |
+| Paper | Source data | Built by |
+|---|---|---|
+| Table 2 (reverse) | `out_paper/mc_{PI,RB,PROP1}_rev_*.csv`, `out_v4/mc_FFPI_rena_rev.csv`, `out_v4/mc_PROP3_re0.04_rev.csv` | `make_tables.py` |
+| Table 3 (forward) | `out_extra/forward/*.csv`, `out_v4/mc_PROP3_re0.06_fwd.csv` | `make_tables.py` |
+| Table 4 (threshold) | `out_v4/mc_PROP3_re*.csv` | `make_tables.py` |
+| Table 5 (tuning) | `out_extra/tuning/*.csv` | `make_tables.py` |
+| Table 6 (validation) | `out_extra/validation/*.csv` | `make_tables.py` |
+| Section 5.4 friction-margin checks | `out_v4/` | `make_tables.py` → `tables/checks.txt` |
+| Figure 1 | — | `fig_fix.py` → `out_paper/fig1_architecture.png` |
+| Figure 2 | simulated on the fly | `figs_paper.py` → `out_paper/fig3_reverse_lowmu_timeseries.png` |
+| Figure 3 | Table 2 data | `fig4.py` → `out_paper/fig4_mc_reverse.png` |
+| Figure 4 | `out_v4/` | `fig_fix.py` → `out_paper/fig5_threshold_margin.png` |
 
-All parameters are generic and textbook-representative. They do not describe any production vehicle or brake system.
-
-## Controllers
-
-| Name | Description |
-|---|---|
-| `PI` | Feedback-only PI, nominal mass |
-| `RB` | Generic rule-based pressure ramp with dead band (not a reproduction of any production system) |
-| `FFPI` | PI + grade feedforward (fixed 0.15 s low-pass), nominal mass |
-| `AFFPI` | FFPI + RLS effective-mass adaptation + jerk limiter, no reallocation (first design iteration) |
-| `PROPOSED` | Noise-adaptive Kalman grade estimator, confidence-blended RLS effective mass, feedforward-PI with 1 bar pressure hysteresis, slip-aware front/rear reallocation with threshold κre = 0.06 forward / 0.04 reverse |
-
-All controllers share the same PI gains and the same anti-lock-style per-axle slip cap.
+The figure file numbers differ from the paper's figure numbers because they come from earlier drafts.
 
 ## Data sets
 
@@ -114,7 +108,7 @@ All controllers share the same PI gains and the same anti-lock-style per-axle sl
 | Evaluation | 42 | 7 | 400 (393) | Main results (Tables 2–5); reallocation-threshold selection |
 | Validation | 2027 | 11 | 400 (393) | Independent confirmation (Table 6); not used for any design choice |
 
-Samples with static friction margin μ cos θ / sin θ ≤ 1.05 are excluded as physically unholdable.
+Samples with a static friction margin μ cos θ / sin θ ≤ 1.05 are excluded as physically unholdable. Reverse-descent PI, RB and A-FF+PI on the evaluation set were run in two batches of 200 samples; the parameter samples are the same as for the other controllers.
 
 ## Key results
 
@@ -123,7 +117,7 @@ Reverse descent, evaluation set, mean (95th percentile):
 | Controller | RMS speed error [km/h] | Max speed [km/h] | Runs with wheel lock > 0.5 s |
 |---|---|---|---|
 | PI | 0.97 (2.33) | 6.76 (10.29) | 63 |
-| Rule-based | 1.19 (3.32) | 6.18 (9.06) | 95 |
+| RB | 1.19 (3.32) | 6.18 (9.06) | 95 |
 | FF+PI | 0.49 (1.51) | 5.41 (8.05) | 71 |
 | A-FF+PI | 0.42 (0.82) | 5.32 (6.65) | 71 |
 | **Proposed** | **0.16 (0.25)** | **4.47 (4.82)** | **0** |
@@ -137,21 +131,20 @@ Independent validation set, reverse descent:
 | Proposed, κre = 0.05 | 0.18 | 4.92 | 2 |
 | **Proposed, κre = 0.04 (final)** | **0.16** | **4.91** | **0** |
 
-Forward descent: the proposed controller's mean RMS speed error was about 35 % lower than FF+PI (0.16 vs. 0.25 km/h) at a similar pressure activity, with no lock-ups.
+Forward descent (evaluation set): the proposed controller's mean RMS speed error was about 35 % lower than FF+PI (0.16 vs. 0.25 km/h) at a similar pressure activity, with no lock-ups.
 
-## Mapping to the paper
+## Model summary
 
-| Paper | Generated by | Output |
-|---|---|---|
-| Table 2 | `make_tables.py` | `results/tables/table2_reverse.csv` |
-| Table 3 | `make_tables.py` | `results/tables/table3_forward.csv` |
-| Table 4 | `make_tables.py` | `results/tables/table4_threshold.csv` |
-| Table 5 | `make_tables.py` | `results/tables/table5_tuning.csv` |
-| Table 6 | `run_validation.py` | `results/validation/summary.csv` |
-| Section 5.4 checks | `make_tables.py` | `results/tables/checks.txt` |
-| Figures 1–4 | `make_figures.py` | `figures/fig1_*.png` … `figures/fig4_*.png` |
+| Part | Description |
+|---|---|
+| Vehicle | Two-axle longitudinal model, quasi-static load transfer, grade profile with optional roughness |
+| Wheels and tires | Per-axle rotational dynamics, Pacejka-type longitudinal tire (B = 10, C = 1.65), brake lock possible |
+| Powertrain | Low-range idle creep / engine-braking force, saturated |
+| Brake actuator | Per axle: dead time + first-order lag + 400 bar/s rate limit; fixed hydraulic front share 0.65 |
+| Sensors | Wheel speeds (σ = 0.02 m/s), accelerometer (σ = 0.05 m/s², bias up to ±0.1 m/s²) |
+| Rates | Plant 1 ms, controllers 10 ms |
 
-**Note:** reverse-descent PI, RB and A-FF+PI on the evaluation set were run in two batches of 200 samples. The parameter samples are the same as for the other controllers.
+All parameters are generic and textbook-representative. They do not describe any production vehicle or brake system.
 
 ## Limitations
 
@@ -167,7 +160,7 @@ Microsoft Copilot was used to help write this code. The author reviewed and veri
 
 ## Citation
 
-If you use this code, please cite it using [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button). Once the paper is published, please cite the paper.
+Please cite this repository using [CITATION.cff](CITATION.cff) (GitHub's "Cite this repository" button). Once the paper is published, please cite the paper.
 
 ## License
 
